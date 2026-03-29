@@ -3,7 +3,7 @@
     "id": "ai-tone-fixer-001",
     "name": "AI Tone Fixer",
     "author": "Balamurugan",
-    "description": "Rewrite your notes into Professional, Friendly, or Concise styles using local AI. to use type #",
+    "description": "Rewrite your notes into Professional, Friendly, or Concise styles using local AI.",
     "version": "1.0.0",
     "downloadUrl": "https://raw.githubusercontent.com/balamurugan-cholas/link-plugins/refs/heads/main/plugins/ai-hash-tone-menu.js"
   }
