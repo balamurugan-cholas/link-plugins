@@ -1,10 +1,10 @@
 [
   {
-    "id": "calc-plugin-001",
-    "name": "Sidebar Calculator",
+    "id": "ai-tone-fixer-001",
+    "name": "AI Tone Fixer",
     "author": "Balamurugan",
-    "description": "Quick math right in your sidebar.",
+    "description": "Rewrite your notes into Professional, Friendly, or Concise styles using local AI. to use type #",
     "version": "1.0.0",
-    "downloadUrl": "https://raw.githubusercontent.com/balamurugan-cholas/link-plugins/refs/heads/main/plugins/calculator-plugin.js"
+    "downloadUrl": "https://raw.githubusercontent.com/balamurugan-cholas/link-plugins/main/plugins/tone-fixer.js"
   }
 ]
