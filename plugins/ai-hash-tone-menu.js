@@ -58,7 +58,7 @@
   const plugin = {
     id: 'ai-hash-tone-menu',
     name: 'AI Hash Tone Menu',
-    version: '1.0.0',
+    version: '1.1.0',
     description:
       'Shows an AI tone dropdown when users type # inside editor blocks, with grouped voice presets.',
     install: installPlugin,
@@ -69,12 +69,15 @@
   let menuElement = null
   let listElement = null
   let helperElement = null
+  let titleElement = null
+  let statusElement = null
   let activeTextarea = null
   let activeMatch = null
   let groupedResults = []
   let flatResults = []
   let selectedIndex = 0
   let cleanupFns = []
+  let isApplyingTone = false
 
   function installPlugin() {
     if (typeof window === 'undefined' || typeof document === 'undefined') {
@@ -127,6 +130,14 @@
 
     const onKeyDown = (event) => {
       if (!activeTextarea || !flatResults.length || event.target !== activeTextarea) {
+        return
+      }
+
+      if (isApplyingTone) {
+        if (event.key === 'Escape') {
+          event.preventDefault()
+          closeMenu()
+        }
         return
       }
 
@@ -199,6 +210,7 @@
     groupedResults = []
     flatResults = []
     selectedIndex = 0
+    isApplyingTone = false
 
     if (typeof window !== 'undefined') {
       window.__linkAiHashToneMenuInstalled = false
@@ -250,6 +262,19 @@
         margin-top: 6px;
         font-size: 13px;
         font-weight: 600;
+      }
+      .link-ai-tone-menu__status {
+        margin-top: 6px;
+        min-height: 16px;
+        font-size: 11px;
+        line-height: 1.35;
+        color: var(--muted-foreground, #6B7280);
+      }
+      .link-ai-tone-menu__status[data-kind="loading"] {
+        color: var(--foreground, #1F2937);
+      }
+      .link-ai-tone-menu__status[data-kind="error"] {
+        color: var(--destructive, #DC2626);
       }
       .link-ai-tone-menu__list {
         max-height: 292px;
@@ -332,11 +357,14 @@
     menuElement.innerHTML = `
       <div class="link-ai-tone-menu__header">
         <div class="link-ai-tone-menu__eyebrow">AI Tone Presets</div>
-        <div class="link-ai-tone-menu__title">Type after # to filter voice styles</div>
+        <div class="link-ai-tone-menu__title">Type after # to rewrite this block</div>
+        <div class="link-ai-tone-menu__status" data-kind="idle"></div>
       </div>
       <div class="link-ai-tone-menu__list"></div>
     `
 
+    titleElement = menuElement.querySelector('.link-ai-tone-menu__title')
+    statusElement = menuElement.querySelector('.link-ai-tone-menu__status')
     listElement = menuElement.querySelector('.link-ai-tone-menu__list')
     document.body.appendChild(menuElement)
   }
@@ -364,6 +392,11 @@
     flatResults = nextFlatResults
     groupedResults = groupFilteredTones(nextFlatResults)
     selectedIndex = Math.min(selectedIndex, flatResults.length - 1)
+    setMenuStatus({
+      title: 'Type after # to rewrite this block',
+      message: '',
+      kind: 'idle',
+    })
     renderMenu()
     positionMenu()
   }
@@ -488,19 +521,147 @@
       return
     }
 
-    const insertion = `#${tone.label} `
-    const nextValue =
-      activeTextarea.value.slice(0, activeMatch.start) +
-      insertion +
-      activeTextarea.value.slice(activeMatch.end)
+    const sourceText = getRewriteSourceText(activeTextarea.value, activeMatch)
 
-    const nextCaret = activeMatch.start + insertion.length
+    if (!sourceText.trim()) {
+      setMenuStatus({
+        title: 'Type after # to rewrite this block',
+        message: 'Add some text to this block before choosing a tone.',
+        kind: 'error',
+      })
+      return
+    }
 
-    setNativeTextareaValue(activeTextarea, nextValue)
-    activeTextarea.focus()
-    activeTextarea.setSelectionRange(nextCaret, nextCaret)
-    activeTextarea.dispatchEvent(createInputLikeEvent())
-    closeMenu()
+    isApplyingTone = true
+    setMenuStatus({
+      title: `Rewriting as ${tone.label}...`,
+      message: tone.description,
+      kind: 'loading',
+    })
+
+    runToneRewrite({
+      tone,
+      sourceText,
+      textarea: activeTextarea,
+    })
+      .then((rewrittenText) => {
+        if (!activeTextarea) {
+          closeMenu()
+          return
+        }
+
+        const finalText = rewrittenText.trim() || sourceText
+        setNativeTextareaValue(activeTextarea, finalText)
+        activeTextarea.focus()
+        activeTextarea.setSelectionRange(finalText.length, finalText.length)
+        activeTextarea.dispatchEvent(createInputLikeEvent())
+        closeMenu()
+      })
+      .catch((error) => {
+        isApplyingTone = false
+        setMenuStatus({
+          title: `Could not apply ${tone.label}`,
+          message: error instanceof Error ? error.message : 'Tone rewrite failed.',
+          kind: 'error',
+        })
+      })
+  }
+
+  function getRewriteSourceText(value, match) {
+    const beforeText = value.slice(0, match.start)
+    const afterText = value.slice(match.end)
+    const trimmedBefore = beforeText.replace(/\s+$/, '')
+    const trimmedAfter = afterText.replace(/^\s+/, '')
+
+    if (trimmedBefore && trimmedAfter) {
+      return `${trimmedBefore} ${trimmedAfter}`
+    }
+
+    return `${trimmedBefore}${trimmedAfter}`
+  }
+
+  function inferBlockType(textarea) {
+    const placeholder = String(textarea.placeholder || '').trim().toLowerCase()
+
+    if (placeholder === 'heading 1') return 'h1'
+    if (placeholder === 'heading 2') return 'h2'
+    if (placeholder === 'heading 3') return 'h3'
+    if (placeholder === 'to-do') return 'checklist'
+    if (placeholder === 'empty quote') return 'quote'
+    if (placeholder === 'write code here...') return 'code'
+    if (placeholder === 'link to page...') return 'page_link'
+    if (placeholder === 'list item') return 'list'
+
+    return 'text'
+  }
+
+  function runToneRewrite(options) {
+    const tone = options.tone
+    const sourceText = options.sourceText
+    const textarea = options.textarea
+
+    if (!window.ai || typeof window.ai.runInlineAgent !== 'function') {
+      return Promise.reject(new Error('Local AI is not available in this build.'))
+    }
+
+    const requestId = `tone-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`
+    const blockType = inferBlockType(textarea)
+    const prompt = [
+      `Rewrite this block in a ${tone.label} tone.`,
+      `${tone.label} means: ${tone.description}.`,
+      'Preserve the original meaning, important details, and formatting structure.',
+      'Do not add explanations or commentary.',
+    ].join(' ')
+
+    return new Promise((resolve, reject) => {
+      let settled = false
+
+      const finish = (callback) => {
+        if (settled) {
+          return
+        }
+
+        settled = true
+        unsubscribe && unsubscribe()
+        callback()
+      }
+
+      const unsubscribe = window.ai.onInlineAgentEvent((event) => {
+        if (!event || event.requestId !== requestId) {
+          return
+        }
+
+        if (event.type === 'complete') {
+          finish(() => resolve(String(event.fullText || '')))
+          return
+        }
+
+        if (event.type === 'error') {
+          finish(() =>
+            reject(new Error(event.error || 'Tone rewrite failed. Make sure the local model is ready.'))
+          )
+          return
+        }
+
+        if (event.type === 'cancelled') {
+          finish(() => reject(new Error('Tone rewrite was cancelled.')))
+        }
+      })
+
+      window.ai.runInlineAgent({
+        requestId: requestId,
+        pageId: 'plugin-tone-rewrite',
+        prompt: prompt,
+        currentBlockType: blockType,
+        currentBlockContent: sourceText,
+        targetBlockType: blockType,
+        actionMode: 'replace',
+      }).catch((error) => {
+        finish(() =>
+          reject(error instanceof Error ? error : new Error('Tone rewrite failed.'))
+        )
+      })
+    })
   }
 
   function setNativeTextareaValue(textarea, value) {
@@ -543,6 +704,17 @@
     }
   }
 
+  function setMenuStatus(options) {
+    if (titleElement) {
+      titleElement.textContent = options.title || 'Type after # to rewrite this block'
+    }
+
+    if (statusElement) {
+      statusElement.textContent = options.message || ''
+      statusElement.dataset.kind = options.kind || 'idle'
+    }
+  }
+
   function closeMenu() {
     if (menuElement) {
       menuElement.dataset.open = 'false'
@@ -552,6 +724,12 @@
     groupedResults = []
     flatResults = []
     selectedIndex = 0
+    isApplyingTone = false
+    setMenuStatus({
+      title: 'Type after # to rewrite this block',
+      message: '',
+      kind: 'idle',
+    })
   }
 
   function positionMenu() {
