@@ -449,6 +449,7 @@
         const itemElement = document.createElement('button')
         itemElement.type = 'button'
         itemElement.className = 'link-ai-tone-menu__item'
+        itemElement.dataset.index = String(absoluteIndex)
         itemElement.dataset.selected = absoluteIndex === selectedIndex ? 'true' : 'false'
         itemElement.innerHTML = `
           <span class="link-ai-tone-menu__badge">#</span>
@@ -478,6 +479,7 @@
     })
 
     menuElement.dataset.open = 'true'
+    scrollSelectedItemIntoView()
   }
 
   function applyTone(tone) {
@@ -494,11 +496,51 @@
 
     const nextCaret = activeMatch.start + insertion.length
 
-    activeTextarea.value = nextValue
+    setNativeTextareaValue(activeTextarea, nextValue)
     activeTextarea.focus()
     activeTextarea.setSelectionRange(nextCaret, nextCaret)
-    activeTextarea.dispatchEvent(new Event('input', { bubbles: true }))
+    activeTextarea.dispatchEvent(createInputLikeEvent())
     closeMenu()
+  }
+
+  function setNativeTextareaValue(textarea, value) {
+    const prototype = window.HTMLTextAreaElement && window.HTMLTextAreaElement.prototype
+    const descriptor = prototype
+      ? Object.getOwnPropertyDescriptor(prototype, 'value')
+      : null
+
+    if (descriptor && typeof descriptor.set === 'function') {
+      descriptor.set.call(textarea, value)
+      return
+    }
+
+    textarea.value = value
+  }
+
+  function createInputLikeEvent() {
+    if (typeof window.InputEvent === 'function') {
+      return new window.InputEvent('input', {
+        bubbles: true,
+        cancelable: true,
+        data: null,
+        inputType: 'insertReplacementText',
+      })
+    }
+
+    return new Event('input', { bubbles: true, cancelable: true })
+  }
+
+  function scrollSelectedItemIntoView() {
+    if (!listElement) {
+      return
+    }
+
+    const selectedItem = listElement.querySelector('.link-ai-tone-menu__item[data-selected="true"]')
+    if (selectedItem && typeof selectedItem.scrollIntoView === 'function') {
+      selectedItem.scrollIntoView({
+        block: 'nearest',
+      })
+    }
   }
 
   function closeMenu() {
