@@ -1,1 +1,10 @@
-[]
+[
+  {
+    "id": "calc-plugin-001",
+    "name": "Sidebar Calculator",
+    "author": "Balamurugan",
+    "description": "Quick math right in your sidebar.",
+    "version": "1.0.0",
+    "downloadUrl": "https://raw.githubusercontent.com/balamurugan-cholas/link-plugins/refs/heads/main/plugins/calculator-plugin.js"
+  }
+]
