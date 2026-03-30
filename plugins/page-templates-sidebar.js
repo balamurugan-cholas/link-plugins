@@ -2,9 +2,9 @@
   const plugin = {
     id: 'page-templates-sidebar',
     name: 'Page Templates Sidebar',
-    version: '1.0.0',
+    version: '2.0.0',
     description:
-      'Adds advanced page templates to the sidebar and creates fully populated pages with headings, checklists, lists, notes, and column layouts.',
+      'Adds a Templates button to the sidebar and opens a full right-side template studio that creates fully populated pages.',
     install: installPlugin,
     dispose: disposePlugin,
   }
@@ -40,8 +40,10 @@
         return
       }
 
+      const shell = popoverElement.querySelector('.link-page-template-studio-shell')
+
       if (
-        popoverElement.contains(event.target) ||
+        (shell && shell.contains(event.target)) ||
         (launcherElement && launcherElement.contains(event.target)) ||
         (collapsedButtonElement && collapsedButtonElement.contains(event.target))
       ) {
@@ -139,6 +141,10 @@
     ensureStyles()
     ensurePopover()
     ensureLaunchers()
+    if (isMenuOpen) {
+      renderPopover()
+      positionPopover()
+    }
     attemptPendingFocus()
   }
 
@@ -168,7 +174,8 @@
 }
 
 .link-page-template-row:hover,
-.link-page-template-row:focus-visible {
+.link-page-template-row:focus-visible,
+.link-page-template-row[data-active="true"] {
   outline: none;
   background: hsl(var(--sidebar-accent, var(--accent)));
 }
@@ -214,7 +221,8 @@
 }
 
 .link-page-template-icon-button:hover,
-.link-page-template-icon-button:focus-visible {
+.link-page-template-icon-button:focus-visible,
+.link-page-template-icon-button[data-active="true"] {
   outline: none;
   background: hsl(var(--sidebar-accent, var(--accent)));
   color: hsl(var(--foreground));
@@ -222,84 +230,129 @@
 
 .link-page-template-popover {
   position: fixed;
-  z-index: 320;
-  width: min(360px, calc(100vw - 24px));
-  border: 1px solid hsl(var(--border) / 0.84);
-  border-radius: 20px;
-  padding: 14px;
-  background:
-    radial-gradient(circle at top right, hsl(var(--primary) / 0.08), transparent 34%),
-    color-mix(in srgb, hsl(var(--card)) 94%, transparent);
-  box-shadow: 0 26px 70px hsl(var(--background) / 0.36);
-  backdrop-filter: blur(18px);
+  z-index: 340;
   opacity: 0;
   pointer-events: none;
-  transform: translateY(8px) scale(0.985);
-  transition: opacity 160ms ease, transform 160ms ease;
+  transition: opacity 150ms ease;
 }
 
 .link-page-template-popover[data-open="true"] {
   opacity: 1;
   pointer-events: auto;
-  transform: translateY(0) scale(1);
+}
+
+.link-page-template-studio-shell {
+  height: 100%;
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  padding: 28px clamp(18px, 3vw, 32px);
+  background:
+    radial-gradient(circle at top right, hsl(var(--primary) / 0.12), transparent 30%),
+    radial-gradient(circle at bottom left, hsl(var(--accent) / 0.28), transparent 26%),
+    color-mix(in srgb, hsl(var(--background)) 92%, transparent);
+  backdrop-filter: blur(18px);
+  overflow-y: auto;
+}
+
+.link-page-template-studio-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 18px;
 }
 
 .link-page-template-headline {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
+  max-width: 760px;
 }
 
 .link-page-template-eyebrow {
-  font-size: 10px;
+  font-size: 11px;
   font-weight: 700;
-  letter-spacing: 0.18em;
+  letter-spacing: 0.22em;
   text-transform: uppercase;
   color: hsl(var(--muted-foreground));
 }
 
 .link-page-template-title {
-  font-size: 15px;
-  font-weight: 600;
+  margin-top: 10px;
+  font-size: clamp(28px, 4vw, 42px);
+  line-height: 1.05;
+  font-weight: 700;
   color: hsl(var(--foreground));
 }
 
 .link-page-template-copy {
-  margin-top: 6px;
-  font-size: 12px;
-  line-height: 1.5;
+  margin-top: 10px;
+  max-width: 720px;
+  font-size: 14px;
+  line-height: 1.7;
   color: hsl(var(--muted-foreground));
 }
 
+.link-page-template-studio-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-shrink: 0;
+}
+
+.link-page-template-pill {
+  display: inline-flex;
+  align-items: center;
+  border-radius: 999px;
+  border: 1px solid hsl(var(--border) / 0.74);
+  padding: 4px 8px;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  color: hsl(var(--muted-foreground));
+  background: hsl(var(--muted) / 0.38);
+}
+
+.link-page-template-close {
+  border: 1px solid hsl(var(--border) / 0.82);
+  background: hsl(var(--card) / 0.66);
+  color: hsl(var(--foreground));
+  border-radius: 999px;
+  padding: 8px 14px;
+  font-size: 12px;
+  font-weight: 600;
+  transition: background 150ms ease, border-color 150ms ease;
+}
+
+.link-page-template-close:hover,
+.link-page-template-close:focus-visible {
+  outline: none;
+  background: hsl(var(--accent) / 0.8);
+  border-color: hsl(var(--foreground) / 0.16);
+}
+
 .link-page-template-list {
-  margin-top: 12px;
   display: grid;
-  gap: 8px;
-  max-height: min(56vh, 520px);
-  overflow-y: auto;
-  padding-right: 2px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
 }
 
 .link-page-template-option {
-  width: 100%;
   border: 1px solid hsl(var(--border) / 0.82);
-  border-radius: 16px;
-  background: hsl(var(--background) / 0.6);
-  color: inherit;
-  padding: 11px 12px;
+  border-radius: 22px;
+  padding: 16px;
+  background:
+    linear-gradient(180deg, hsl(var(--card) / 0.82), hsl(var(--card) / 0.64));
   display: flex;
-  align-items: flex-start;
-  gap: 11px;
-  text-align: left;
-  transition: transform 150ms ease, border-color 150ms ease, background 150ms ease;
+  flex-direction: column;
+  gap: 14px;
+  transition: transform 160ms ease, border-color 160ms ease, background 160ms ease;
 }
 
 .link-page-template-option:hover,
-.link-page-template-option:focus-visible {
-  outline: none;
+.link-page-template-option:focus-within {
   transform: translateY(-1px);
   border-color: hsl(var(--foreground) / 0.16);
-  background: hsl(var(--accent) / 0.82);
+  background:
+    linear-gradient(180deg, hsl(var(--card) / 0.92), hsl(var(--accent) / 0.52));
 }
 
 .link-page-template-option[disabled] {
@@ -308,16 +361,23 @@
   transform: none;
 }
 
+.link-page-template-option-top {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
 .link-page-template-badge {
-  width: 28px;
-  height: 28px;
-  border-radius: 10px;
+  width: 34px;
+  height: 34px;
+  border-radius: 12px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
   border: 1px solid hsl(var(--border) / 0.82);
   background: hsl(var(--muted) / 0.52);
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 700;
   letter-spacing: 0.04em;
   color: hsl(var(--foreground));
@@ -329,41 +389,81 @@
 }
 
 .link-page-template-name {
-  font-size: 13px;
-  font-weight: 600;
+  font-size: 18px;
+  font-weight: 650;
+  line-height: 1.2;
   color: hsl(var(--foreground));
 }
 
 .link-page-template-desc {
-  margin-top: 4px;
-  font-size: 11px;
-  line-height: 1.45;
+  margin-top: 7px;
+  font-size: 13px;
+  line-height: 1.6;
   color: hsl(var(--muted-foreground));
 }
 
 .link-page-template-meta {
-  margin-top: 8px;
   display: flex;
   flex-wrap: wrap;
-  gap: 6px;
+  gap: 7px;
 }
 
-.link-page-template-pill {
-  border-radius: 999px;
-  border: 1px solid hsl(var(--border) / 0.74);
-  padding: 3px 7px;
-  font-size: 10px;
-  font-weight: 600;
-  letter-spacing: 0.05em;
+.link-page-template-highlights {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+}
+
+.link-page-template-footer {
+  margin-top: auto;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.link-page-template-note {
+  font-size: 11px;
   color: hsl(var(--muted-foreground));
-  background: hsl(var(--muted) / 0.38);
+}
+
+.link-page-template-create {
+  border: 1px solid hsl(var(--border) / 0.82);
+  background: hsl(var(--foreground));
+  color: hsl(var(--background));
+  border-radius: 999px;
+  padding: 8px 13px;
+  font-size: 12px;
+  font-weight: 700;
+  transition: transform 150ms ease, opacity 150ms ease;
+}
+
+.link-page-template-create:hover,
+.link-page-template-create:focus-visible {
+  outline: none;
+  transform: translateY(-1px);
+}
+
+.link-page-template-create[disabled] {
+  opacity: 0.58;
+  cursor: wait;
+  transform: none;
 }
 
 .link-page-template-status {
-  min-height: 16px;
-  margin-top: 11px;
-  font-size: 11px;
+  min-height: 18px;
+  font-size: 12px;
   color: hsl(var(--muted-foreground));
+}
+
+@media (max-width: 960px) {
+  .link-page-template-list {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .link-page-template-studio-header {
+    flex-direction: column;
+  }
 }
 `
     document.head.appendChild(styleElement)
@@ -378,14 +478,11 @@
     popoverElement.className = 'link-page-template-popover no-drag'
     popoverElement.dataset.open = 'false'
     document.body.appendChild(popoverElement)
-
-    renderPopover()
   }
 
   function ensureLaunchers() {
     ensureExpandedLauncher()
     ensureCollapsedLauncher()
-    renderPopover()
     if (isMenuOpen) {
       positionPopover()
     }
@@ -433,6 +530,8 @@
       })
     }
 
+    collapsedButtonElement.dataset.active = isMenuOpen ? 'true' : 'false'
+
     if (collapsedButtonElement.parentElement !== todoButton.parentElement || collapsedButtonElement.nextElementSibling !== todoButton) {
       todoButton.parentElement.insertBefore(collapsedButtonElement, todoButton)
     }
@@ -444,7 +543,9 @@
     }
 
     launcherElement.innerHTML = `
-      <button class="link-page-template-row w-full text-sidebar-foreground hover:bg-sidebar-accent rounded-lg" type="button">
+      <button class="link-page-template-row w-full text-sidebar-foreground hover:bg-sidebar-accent rounded-lg" type="button" data-active="${
+        isMenuOpen ? 'true' : 'false'
+      }">
         ${getGlyphSvg()}
         <span class="link-page-template-row-label">Templates</span>
         <span class="link-page-template-row-meta">
@@ -466,38 +567,67 @@
       return
     }
 
+    if (!isMenuOpen) {
+      popoverElement.dataset.open = 'false'
+      return
+    }
+
     const templates = getTemplates()
     const cards = templates
       .map(
         (template) => `
-          <button class="link-page-template-option" type="button" data-template-id="${escapeHtml(template.id)}" ${
-            isCreating ? 'disabled' : ''
-          }>
-            <span class="link-page-template-badge">${escapeHtml(template.short)}</span>
-            <span class="link-page-template-body">
-              <span class="link-page-template-name">${escapeHtml(template.title)}</span>
-              <span class="link-page-template-desc">${escapeHtml(template.description)}</span>
-              <span class="link-page-template-meta">
-                ${template.tags.map((tag) => `<span class="link-page-template-pill">${escapeHtml(tag)}</span>`).join('')}
-              </span>
-            </span>
-          </button>
+          <article class="link-page-template-option">
+            <div class="link-page-template-option-top">
+              <div class="link-page-template-body">
+                <div class="link-page-template-name">${escapeHtml(template.title)}</div>
+                <div class="link-page-template-desc">${escapeHtml(template.description)}</div>
+              </div>
+              <div class="link-page-template-badge">${escapeHtml(template.short)}</div>
+            </div>
+            <div class="link-page-template-meta">
+              ${template.tags.map((tag) => `<span class="link-page-template-pill">${escapeHtml(tag)}</span>`).join('')}
+            </div>
+            <div class="link-page-template-highlights">
+              ${template.highlights
+                .map((item) => `<span class="link-page-template-pill">${escapeHtml(item)}</span>`)
+                .join('')}
+            </div>
+            <div class="link-page-template-footer">
+              <div class="link-page-template-note">Creates a new page instantly</div>
+              <button class="link-page-template-create" type="button" data-template-id="${escapeHtml(template.id)}" ${
+                isCreating ? 'disabled' : ''
+              }>${isCreating ? 'Creating...' : 'Use template'}</button>
+            </div>
+          </article>
         `
       )
       .join('')
 
     popoverElement.innerHTML = `
-      <div class="link-page-template-headline">
-        <div class="link-page-template-eyebrow">Templates</div>
-        <div class="link-page-template-title">Create a structured page</div>
+      <div class="link-page-template-studio-shell">
+        <div class="link-page-template-studio-header">
+          <div class="link-page-template-headline">
+            <div class="link-page-template-eyebrow">Page Templates</div>
+            <div class="link-page-template-title">Choose a starting point for the page you want to create.</div>
+            <div class="link-page-template-copy">Selecting any template creates a new page, fills it with structured blocks, opens that page on reload, and places the cursor in the first editable block.</div>
+          </div>
+          <div class="link-page-template-studio-actions">
+            <div class="link-page-template-pill">${templates.length} templates</div>
+            <button class="link-page-template-close" type="button">Close</button>
+          </div>
+        </div>
+        <div class="link-page-template-list">${cards}</div>
+        <div class="link-page-template-status"></div>
       </div>
-      <div class="link-page-template-copy">Pick a template and the plugin will create the page, open it, and focus the first editable block.</div>
-      <div class="link-page-template-list">${cards}</div>
-      <div class="link-page-template-status"></div>
     `
 
     popoverListElement = popoverElement.querySelector('.link-page-template-list')
     popoverStatusElement = popoverElement.querySelector('.link-page-template-status')
+    popoverElement.dataset.open = 'true'
+
+    popoverElement.querySelector('.link-page-template-close').addEventListener('click', () => {
+      closePopover()
+    })
 
     Array.from(popoverElement.querySelectorAll('[data-template-id]')).forEach((button) => {
       button.addEventListener('click', () => {
@@ -522,57 +652,87 @@
 
     menuAnchorElement = anchorElement
     isMenuOpen = true
-    popoverElement.dataset.open = 'true'
     renderPopover()
     setStatus(isCreating ? 'Creating page...' : 'Choose a template.')
     positionPopover()
+    syncLauncherState()
   }
 
   function closePopover() {
-    if (!popoverElement) {
+    if (!popoverElement || isCreating) {
       return
     }
 
     isMenuOpen = false
     menuAnchorElement = null
     popoverElement.dataset.open = 'false'
+    syncLauncherState()
   }
 
   function positionPopover() {
-    if (!popoverElement || !menuAnchorElement) {
+    if (!popoverElement || !isMenuOpen) {
       return
     }
 
-    const anchorRect = menuAnchorElement.getBoundingClientRect()
-    const viewportPadding = 12
-    const desiredWidth = Math.min(360, window.innerWidth - viewportPadding * 2)
-    let left = anchorRect.right + 12
-    let top = anchorRect.top - 4
-
-    popoverElement.style.width = `${desiredWidth}px`
-    popoverElement.style.left = `${left}px`
-    popoverElement.style.top = `${top}px`
-
-    const rect = popoverElement.getBoundingClientRect()
-    if (rect.right > window.innerWidth - viewportPadding) {
-      left = Math.max(viewportPadding, anchorRect.left - rect.width - 12)
+    const pane = findRightPane()
+    if (!pane) {
+      return
     }
 
-    if (rect.bottom > window.innerHeight - viewportPadding) {
-      top = Math.max(viewportPadding, window.innerHeight - rect.height - viewportPadding)
+    const rect = pane.getBoundingClientRect()
+    popoverElement.style.left = `${Math.max(0, rect.left)}px`
+    popoverElement.style.top = `${Math.max(0, rect.top)}px`
+    popoverElement.style.width = `${Math.max(0, rect.width)}px`
+    popoverElement.style.height = `${Math.max(0, rect.height)}px`
+  }
+
+  function findRightPane() {
+    const rows = Array.from(document.querySelectorAll('div'))
+    for (const row of rows) {
+      if (!(row.classList.contains('flex-1') && row.classList.contains('flex') && row.classList.contains('overflow-hidden'))) {
+        continue
+      }
+
+      const children = Array.from(row.children)
+      if (children.length < 2) {
+        continue
+      }
+
+      const sidebarChild = children.find((child) => child.classList.contains('bg-sidebar'))
+      if (!sidebarChild) {
+        continue
+      }
+
+      const rightPane = children.find(
+        (child) =>
+          child !== sidebarChild &&
+          child.classList.contains('flex-1') &&
+          child.classList.contains('flex') &&
+          child.classList.contains('flex-col')
+      )
+
+      if (rightPane) {
+        return rightPane
+      }
     }
 
-    if (top < viewportPadding) {
-      top = viewportPadding
-    }
-
-    popoverElement.style.left = `${left}px`
-    popoverElement.style.top = `${top}px`
+    return null
   }
 
   function findExpandedFooterSlot() {
     const todoButton = findExpandedTodoButton()
     return todoButton ? todoButton.closest('.px-1') : null
+  }
+
+  function syncLauncherState() {
+    const expandedButton = launcherElement && launcherElement.querySelector('button')
+    if (expandedButton) {
+      expandedButton.dataset.active = isMenuOpen ? 'true' : 'false'
+    }
+
+    if (collapsedButtonElement) {
+      collapsedButtonElement.dataset.active = isMenuOpen ? 'true' : 'false'
+    }
   }
 
   function findExpandedTodoButton() {
@@ -663,6 +823,7 @@
         title: 'Project OS',
         description: 'North star, milestones, owners, risks, operating cadence, and launch readiness.',
         tags: ['Work', 'Ops', 'Columns'],
+        highlights: ['Milestones', 'Risk log', 'Owners'],
         pageTitle: (today) => `Project OS - ${today}`,
         properties: (today) => ({ status: 'In Progress', tags: ['Work', 'Tech'], date: today }),
         blocks: () => [
@@ -691,6 +852,7 @@
         title: 'Meeting Command Center',
         description: 'Agenda, fast notes, decisions, action items, and follow-up in one page.',
         tags: ['Meetings', 'Checklist', 'Decisions'],
+        highlights: ['Agenda', 'Notes', 'Actions'],
         pageTitle: (today) => `Meeting Command Center - ${today}`,
         properties: (today) => ({ status: 'Todo', tags: ['Work'], date: today }),
         blocks: () => [
@@ -717,6 +879,7 @@
         title: 'Weekly Review',
         description: 'A personal or team review page for wins, blockers, metrics, and next focus.',
         tags: ['Review', 'Planning', 'Reflection'],
+        highlights: ['Wins', 'Metrics', 'Priorities'],
         pageTitle: (today) => `Weekly Review - ${today}`,
         properties: (today) => ({ status: 'In Progress', tags: ['Personal', 'Work'], date: today }),
         blocks: () => [
@@ -744,6 +907,7 @@
         title: 'Research Brief',
         description: 'Question framing, assumptions, evidence collection, insights, and recommended next moves.',
         tags: ['Research', 'Insight', 'Strategy'],
+        highlights: ['Question', 'Evidence', 'Synthesis'],
         pageTitle: (today) => `Research Brief - ${today}`,
         properties: (today) => ({ status: 'Todo', tags: ['Tech', 'Work'], date: today }),
         blocks: () => [
@@ -773,6 +937,7 @@
         title: 'Product Spec',
         description: 'Problem framing, target audience, user flow, scope, acceptance, and rollout notes.',
         tags: ['Product', 'Spec', 'Build'],
+        highlights: ['Problem', 'Scope', 'Acceptance'],
         pageTitle: () => 'Product Spec',
         properties: (today) => ({ status: 'Todo', tags: ['Work', 'Tech'], date: today }),
         blocks: () => [
@@ -803,6 +968,7 @@
         title: 'Client Workspace',
         description: 'Shared context for onboarding, deliverables, approvals, meetings, and handoff.',
         tags: ['Client', 'Delivery', 'Handoff'],
+        highlights: ['Deliverables', 'Approvals', 'Handoff'],
         pageTitle: () => 'Client Workspace',
         properties: (today) => ({ status: 'In Progress', tags: ['Work'], date: today }),
         blocks: () => [
@@ -821,6 +987,120 @@
           checklist('Pending feedback'),
           h2('Handoff notes'),
           quote('What should the next person be able to understand in five minutes?'),
+        ],
+      },
+      {
+        id: 'sprint-planner',
+        short: 'SP',
+        title: 'Sprint Planner',
+        description: 'Goals, backlog, dependencies, capacity notes, and a clean sprint kickoff structure.',
+        tags: ['Sprint', 'Planning', 'Delivery'],
+        highlights: ['Goals', 'Backlog', 'Dependencies'],
+        pageTitle: (today) => `Sprint Planner - ${today}`,
+        properties: (today) => ({ status: 'Todo', tags: ['Work', 'Tech'], date: today }),
+        blocks: () => [
+          h2('Sprint goal'),
+          text('What should be true by the end of this sprint?'),
+          columns([
+            [h3('Top goals'), checklist('Goal 1'), checklist('Goal 2'), checklist('Goal 3')],
+            [h3('Capacity notes'), list('Time off'), list('Major meetings'), list('Dependency risks')],
+          ]),
+          h2('Backlog for this sprint'),
+          checklist('Item 1'),
+          checklist('Item 2'),
+          checklist('Item 3'),
+          checklist('Stretch item'),
+          h2('Dependencies'),
+          list('Dependency 1'),
+          list('Dependency 2'),
+          h2('Definition of done'),
+          checklist('Demo ready'),
+          checklist('Docs updated'),
+          checklist('QA complete'),
+        ],
+      },
+      {
+        id: 'content-engine',
+        short: 'CE',
+        title: 'Content Engine',
+        description: 'A production page for content strategy, publishing workflow, hooks, drafts, and review.',
+        tags: ['Content', 'Workflow', 'Publishing'],
+        highlights: ['Hooks', 'Outline', 'Review'],
+        pageTitle: (today) => `Content Engine - ${today}`,
+        properties: (today) => ({ status: 'In Progress', tags: ['Work'], date: today }),
+        blocks: () => [
+          h2('Content objective'),
+          text('What should this piece make the audience feel, know, or do next?'),
+          columns([
+            [h3('Audience signals'), list('Audience segment'), list('Pain point'), list('Desired action')],
+            [h3('Publishing constraints'), checklist('Deadline'), checklist('Channel'), checklist('Review owner')],
+          ]),
+          h2('Angle and hooks'),
+          numbered('Hook option 1'),
+          numbered('Hook option 2'),
+          numbered('Hook option 3'),
+          h2('Outline'),
+          checklist('Opening'),
+          checklist('Main point 1'),
+          checklist('Main point 2'),
+          checklist('Call to action'),
+          h2('Review notes'),
+          quote('What should be sharper before publishing?'),
+        ],
+      },
+      {
+        id: 'personal-dashboard',
+        short: 'PD',
+        title: 'Personal Dashboard',
+        description: 'A structured personal page for focus areas, habits, commitments, and check-ins.',
+        tags: ['Personal', 'Focus', 'Habits'],
+        highlights: ['Focus', 'Habits', 'Check-in'],
+        pageTitle: () => 'Personal Dashboard',
+        properties: (today) => ({ status: 'In Progress', tags: ['Personal'], date: today }),
+        blocks: () => [
+          h2('Main focus right now'),
+          quote('What deserves the clearest attention this week?'),
+          columns([
+            [h3('Commitments'), checklist('Commitment 1'), checklist('Commitment 2'), checklist('Commitment 3')],
+            [h3('Habits'), checklist('Habit 1'), checklist('Habit 2'), checklist('Habit 3')],
+          ]),
+          h2('Personal notes'),
+          text('Capture reminders, observations, or emotional weather in plain language.'),
+          h2('Stop doing'),
+          list('Thing to reduce'),
+          list('Thing to remove'),
+          h2('Keep doing'),
+          list('Thing to protect'),
+          list('Thing to continue'),
+        ],
+      },
+      {
+        id: 'interview-loop',
+        short: 'IL',
+        title: 'Interview Loop',
+        description: 'Interview goals, score areas, question bank, evidence notes, and final decision summary.',
+        tags: ['Hiring', 'Interview', 'Evaluation'],
+        highlights: ['Questions', 'Evidence', 'Decision'],
+        pageTitle: (today) => `Interview Loop - ${today}`,
+        properties: (today) => ({ status: 'Todo', tags: ['Work'], date: today }),
+        blocks: () => [
+          h2('Role and outcome'),
+          text('What is the role, and what must a strong candidate be able to do well?'),
+          columns([
+            [h3('Score areas'), checklist('Execution'), checklist('Communication'), checklist('Ownership')],
+            [h3('Interviewers'), list('Interviewer 1'), list('Interviewer 2'), list('Interviewer 3')],
+          ]),
+          h2('Question bank'),
+          numbered('Question 1'),
+          numbered('Question 2'),
+          numbered('Question 3'),
+          h2('Evidence notes'),
+          text('Capture evidence, not vibes.'),
+          h2('Decision summary'),
+          checklist('Strong yes'),
+          checklist('Leaning yes'),
+          checklist('No hire'),
+          quote('What is the clearest reason behind the final recommendation?'),
         ],
       },
     ]
