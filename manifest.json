@@ -17,9 +17,9 @@
   },
   {
     "id": "export-open-page",
-    "name": "Export Pro",
+    "name": "Export Open Page",
     "author": "Balamurugan",
-    "description": "Export pages to Markdown, PDF, HTML, TXT, or a complete ZIP archive.",
+    "description": "Adds a minimal export button to the top bar for TXT, PDF, DOCX, MD, HTML, or ZIP.",
     "version": "1.0.0",
     "downloadUrl": "https://raw.githubusercontent.com/balamurugan-cholas/link-plugins/refs/heads/main/plugins/export-open-page.js"
   }
