@@ -8,7 +8,7 @@
     "downloadUrl": "https://raw.githubusercontent.com/balamurugan-cholas/link-plugins/refs/heads/main/plugins/ai-hash-tone-menu.js"
   },
   {
-    "id": "sys-trash-manager",
+    "id": "clear-all-trash",
     "name": "Trash System Pro",
     "author": "Balamurugan",
     "description": "System-level utility to purge deleted files with a confirmation safety net.",
