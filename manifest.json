@@ -16,7 +16,7 @@
     "downloadUrl": "https://raw.githubusercontent.com/balamurugan-cholas/link-plugins/refs/heads/main/plugins/clear-all-trash.js"
   },
   {
-    "id": "export-pro-tool",
+    "id": "export-open-page",
     "name": "Export Pro",
     "author": "Balamurugan",
     "description": "Export pages to Markdown, PDF, HTML, TXT, or a complete ZIP archive.",
