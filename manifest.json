@@ -21,6 +21,6 @@
     "author": "Balamurugan",
     "description": "Export pages to Markdown, PDF, HTML, TXT, or a complete ZIP archive.",
     "version": "1.0.0",
-    "downloadUrl": "https://raw.githubusercontent.com/balamurugan-cholas/link-plugins/refs/heads/main/plugins/export-pro.js"
+    "downloadUrl": "https://raw.githubusercontent.com/balamurugan-cholas/link-plugins/refs/heads/main/plugins/export-open-page.js"
   }
 ]
