@@ -22,5 +22,13 @@
     "description": "Adds a minimal export button to the top bar for TXT, PDF, DOCX, MD, HTML, or ZIP.",
     "version": "1.0.0",
     "downloadUrl": "https://raw.githubusercontent.com/balamurugan-cholas/link-plugins/refs/heads/main/plugins/export-open-page.js"
+  },
+  {
+    "id": "page-templates-sidebar",
+    "name": "Page Templates Sidebar",
+    "author": "Balamurugan",
+    "description": "Adds advanced page templates to the sidebar and creates fully populated pages with headings, checklists, and column layouts.",
+    "version": "1.0.0",
+    "downloadUrl": "https://raw.githubusercontent.com/balamurugan-cholas/link-plugins/refs/heads/main/plugins/page-templates-sidebar.js"
   }
 ]
