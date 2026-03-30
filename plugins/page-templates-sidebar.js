@@ -10,13 +10,17 @@
   }
 
   let styleElement = null
-  let sectionElement = null
-  let statusElement = null
+  let launcherElement = null
+  let collapsedButtonElement = null
+  let popoverElement = null
+  let popoverListElement = null
+  let popoverStatusElement = null
+  let menuAnchorElement = null
   let observer = null
   let cleanupFns = []
   let syncScheduled = false
   let isCreating = false
-  let isSectionOpen = readOpenPreference()
+  let isMenuOpen = false
 
   function installPlugin() {
     if (typeof window === 'undefined' || typeof document === 'undefined') {
@@ -31,14 +35,54 @@
 
     syncPluginUi()
 
+    const onPointerDown = (event) => {
+      if (!isMenuOpen || !popoverElement) {
+        return
+      }
+
+      if (
+        popoverElement.contains(event.target) ||
+        (launcherElement && launcherElement.contains(event.target)) ||
+        (collapsedButtonElement && collapsedButtonElement.contains(event.target))
+      ) {
+        return
+      }
+
+      closePopover()
+    }
+
+    const onKeyDown = (event) => {
+      if (event.key === 'Escape' && isMenuOpen && !isCreating) {
+        event.preventDefault()
+        closePopover()
+      }
+    }
+
+    const onViewportChange = () => {
+      if (isMenuOpen) {
+        positionPopover()
+      }
+    }
+
     observer = new MutationObserver(() => {
       scheduleUiSync()
     })
     observer.observe(document.body, { childList: true, subtree: true })
 
     window.addEventListener('focus', scheduleUiSync, true)
+    window.addEventListener('pointerdown', onPointerDown, true)
+    window.addEventListener('keydown', onKeyDown, true)
+    window.addEventListener('resize', onViewportChange, true)
+    window.addEventListener('scroll', onViewportChange, true)
 
-    cleanupFns = [() => observer && observer.disconnect(), () => window.removeEventListener('focus', scheduleUiSync, true)]
+    cleanupFns = [
+      () => observer && observer.disconnect(),
+      () => window.removeEventListener('focus', scheduleUiSync, true),
+      () => window.removeEventListener('pointerdown', onPointerDown, true),
+      () => window.removeEventListener('keydown', onKeyDown, true),
+      () => window.removeEventListener('resize', onViewportChange, true),
+      () => window.removeEventListener('scroll', onViewportChange, true),
+    ]
 
     return plugin
   }
@@ -50,11 +94,26 @@
     observer && observer.disconnect()
     observer = null
 
-    if (sectionElement) {
-      sectionElement.remove()
-      sectionElement = null
-      statusElement = null
+    if (launcherElement) {
+      launcherElement.remove()
+      launcherElement = null
     }
+
+    if (collapsedButtonElement) {
+      collapsedButtonElement.remove()
+      collapsedButtonElement = null
+    }
+
+    if (popoverElement) {
+      popoverElement.remove()
+      popoverElement = null
+      popoverListElement = null
+      popoverStatusElement = null
+    }
+
+    menuAnchorElement = null
+    isMenuOpen = false
+    isCreating = false
 
     if (styleElement) {
       styleElement.remove()
@@ -78,7 +137,9 @@
 
   function syncPluginUi() {
     ensureStyles()
-    ensureSection()
+    ensurePopover()
+    ensureLaunchers()
+    attemptPendingFocus()
   }
 
   function ensureStyles() {
@@ -89,99 +150,173 @@
     styleElement = document.createElement('style')
     styleElement.dataset.linkPageTemplatesSidebar = 'true'
     styleElement.textContent = `
-.link-page-templates {
-  border: 1px solid hsl(var(--border) / 0.72);
-  border-radius: 18px;
-  padding: 10px 10px 12px;
-  background:
-    radial-gradient(circle at top right, hsl(var(--primary) / 0.09), transparent 42%),
-    color-mix(in srgb, hsl(var(--muted)) 62%, transparent);
+.link-page-template-launcher {
+  position: relative;
 }
 
-.link-page-templates-toggle {
+.link-page-template-row {
   width: 100%;
   border: 0;
   background: transparent;
   color: inherit;
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  padding: 0;
+  gap: 10px;
+  padding: 6px 8px;
+  border-radius: 10px;
+  transition: background 150ms ease, color 150ms ease;
 }
 
-.link-page-templates-label {
+.link-page-template-row:hover,
+.link-page-template-row:focus-visible {
+  outline: none;
+  background: hsl(var(--sidebar-accent, var(--accent)));
+}
+
+.link-page-template-row-label {
+  flex: 1;
+  min-width: 0;
+  text-align: left;
+  font-size: 14px;
+}
+
+.link-page-template-row-meta {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: hsl(var(--muted-foreground));
+}
+
+.link-page-template-glyph {
+  width: 16px;
+  height: 16px;
+  color: hsl(var(--muted-foreground));
+  flex: 0 0 auto;
+}
+
+.link-page-template-dot {
+  width: 4px;
+  height: 4px;
+  border-radius: 999px;
+  background: hsl(var(--muted-foreground) / 0.55);
+}
+
+.link-page-template-icon-button {
+  border: 0;
+  background: transparent;
+  padding: 8px;
+  border-radius: 10px;
+  color: hsl(var(--muted-foreground));
+  transition: background 150ms ease, color 150ms ease;
+}
+
+.link-page-template-icon-button:hover,
+.link-page-template-icon-button:focus-visible {
+  outline: none;
+  background: hsl(var(--sidebar-accent, var(--accent)));
+  color: hsl(var(--foreground));
+}
+
+.link-page-template-popover {
+  position: fixed;
+  z-index: 320;
+  width: min(360px, calc(100vw - 24px));
+  border: 1px solid hsl(var(--border) / 0.84);
+  border-radius: 20px;
+  padding: 14px;
+  background:
+    radial-gradient(circle at top right, hsl(var(--primary) / 0.08), transparent 34%),
+    color-mix(in srgb, hsl(var(--card)) 94%, transparent);
+  box-shadow: 0 26px 70px hsl(var(--background) / 0.36);
+  backdrop-filter: blur(18px);
+  opacity: 0;
+  pointer-events: none;
+  transform: translateY(8px) scale(0.985);
+  transition: opacity 160ms ease, transform 160ms ease;
+}
+
+.link-page-template-popover[data-open="true"] {
+  opacity: 1;
+  pointer-events: auto;
+  transform: translateY(0) scale(1);
+}
+
+.link-page-template-headline {
   display: flex;
   flex-direction: column;
-  align-items: flex-start;
-  gap: 5px;
-  min-width: 0;
+  gap: 4px;
 }
 
-.link-page-templates-eyebrow {
+.link-page-template-eyebrow {
   font-size: 10px;
   font-weight: 700;
   letter-spacing: 0.18em;
   text-transform: uppercase;
-  color: hsl(var(--muted-foreground) / 0.72);
+  color: hsl(var(--muted-foreground));
 }
 
-.link-page-templates-title {
-  font-size: 13px;
+.link-page-template-title {
+  font-size: 15px;
   font-weight: 600;
   color: hsl(var(--foreground));
 }
 
-.link-page-templates-copy {
-  margin-top: 4px;
-  font-size: 11px;
+.link-page-template-copy {
+  margin-top: 6px;
+  font-size: 12px;
   line-height: 1.5;
   color: hsl(var(--muted-foreground));
 }
 
-.link-page-templates-list {
+.link-page-template-list {
   margin-top: 12px;
   display: grid;
   gap: 8px;
+  max-height: min(56vh, 520px);
+  overflow-y: auto;
+  padding-right: 2px;
 }
 
-.link-page-template-card {
+.link-page-template-option {
   width: 100%;
-  border: 1px solid hsl(var(--border) / 0.8);
-  border-radius: 14px;
+  border: 1px solid hsl(var(--border) / 0.82);
+  border-radius: 16px;
   background: hsl(var(--background) / 0.6);
   color: inherit;
-  padding: 10px 11px;
+  padding: 11px 12px;
   display: flex;
   align-items: flex-start;
-  gap: 10px;
+  gap: 11px;
   text-align: left;
   transition: transform 150ms ease, border-color 150ms ease, background 150ms ease;
 }
 
-.link-page-template-card:hover,
-.link-page-template-card:focus-visible {
+.link-page-template-option:hover,
+.link-page-template-option:focus-visible {
   outline: none;
   transform: translateY(-1px);
   border-color: hsl(var(--foreground) / 0.16);
   background: hsl(var(--accent) / 0.82);
 }
 
-.link-page-template-card[disabled] {
+.link-page-template-option[disabled] {
   opacity: 0.62;
   cursor: wait;
   transform: none;
 }
 
-.link-page-template-icon {
-  width: 26px;
-  height: 26px;
-  border-radius: 9px;
+.link-page-template-badge {
+  width: 28px;
+  height: 28px;
+  border-radius: 10px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  border: 1px solid hsl(var(--border) / 0.8);
-  background: hsl(var(--muted) / 0.55);
+  border: 1px solid hsl(var(--border) / 0.82);
+  background: hsl(var(--muted) / 0.52);
   font-size: 11px;
   font-weight: 700;
   letter-spacing: 0.04em;
@@ -194,7 +329,7 @@
 }
 
 .link-page-template-name {
-  font-size: 12px;
+  font-size: 13px;
   font-weight: 600;
   color: hsl(var(--foreground));
 }
@@ -209,8 +344,8 @@
 .link-page-template-meta {
   margin-top: 8px;
   display: flex;
-  gap: 6px;
   flex-wrap: wrap;
+  gap: 6px;
 }
 
 .link-page-template-pill {
@@ -226,7 +361,7 @@
 
 .link-page-template-status {
   min-height: 16px;
-  margin-top: 10px;
+  margin-top: 11px;
   font-size: 11px;
   color: hsl(var(--muted-foreground));
 }
@@ -234,105 +369,223 @@
     document.head.appendChild(styleElement)
   }
 
-  function ensureSection() {
-    const scrollContainer = findSidebarScrollContainer()
-    if (!scrollContainer) {
-      if (sectionElement && sectionElement.parentElement) {
-        sectionElement.remove()
+  function ensurePopover() {
+    if (popoverElement) {
+      return
+    }
+
+    popoverElement = document.createElement('div')
+    popoverElement.className = 'link-page-template-popover no-drag'
+    popoverElement.dataset.open = 'false'
+    document.body.appendChild(popoverElement)
+
+    renderPopover()
+  }
+
+  function ensureLaunchers() {
+    ensureExpandedLauncher()
+    ensureCollapsedLauncher()
+    renderPopover()
+    if (isMenuOpen) {
+      positionPopover()
+    }
+  }
+
+  function ensureExpandedLauncher() {
+    const footerSlot = findExpandedFooterSlot()
+    if (!footerSlot) {
+      if (launcherElement && launcherElement.parentElement) {
+        launcherElement.remove()
       }
       return
     }
 
-    if (!sectionElement) {
-      sectionElement = document.createElement('div')
-      sectionElement.className = 'link-page-templates'
+    if (!launcherElement) {
+      launcherElement = document.createElement('div')
+      launcherElement.className = 'px-1 link-page-template-launcher'
     }
 
-    const privateSection = findPrivateSection(scrollContainer)
-    if (privateSection) {
-      if (sectionElement.parentElement !== scrollContainer || sectionElement.nextElementSibling !== privateSection) {
-        scrollContainer.insertBefore(sectionElement, privateSection)
+    if (launcherElement.parentElement !== footerSlot.parentElement || launcherElement.nextElementSibling !== footerSlot) {
+      footerSlot.parentElement.insertBefore(launcherElement, footerSlot)
+    }
+
+    renderExpandedLauncher()
+  }
+
+  function ensureCollapsedLauncher() {
+    const todoButton = findCollapsedTodoButton()
+    if (!todoButton || !todoButton.parentElement) {
+      if (collapsedButtonElement && collapsedButtonElement.parentElement) {
+        collapsedButtonElement.remove()
       }
-    } else if (sectionElement.parentElement !== scrollContainer) {
-      scrollContainer.prepend(sectionElement)
+      return
     }
 
-    renderSection()
+    if (!collapsedButtonElement) {
+      collapsedButtonElement = document.createElement('button')
+      collapsedButtonElement.type = 'button'
+      collapsedButtonElement.className = 'link-page-template-icon-button no-drag'
+      collapsedButtonElement.title = 'Templates'
+      collapsedButtonElement.setAttribute('aria-label', 'Templates')
+      collapsedButtonElement.innerHTML = getGlyphSvg()
+      collapsedButtonElement.addEventListener('click', () => {
+        togglePopover(collapsedButtonElement)
+      })
+    }
+
+    if (collapsedButtonElement.parentElement !== todoButton.parentElement || collapsedButtonElement.nextElementSibling !== todoButton) {
+      todoButton.parentElement.insertBefore(collapsedButtonElement, todoButton)
+    }
   }
 
-  function findSidebarScrollContainer() {
-    return Array.from(document.querySelectorAll('div')).find((node) => {
-      return (
-        node.classList.contains('overflow-y-auto') &&
-        node.classList.contains('flex-1') &&
-        node.closest('.bg-sidebar')
-      )
-    }) || null
+  function renderExpandedLauncher() {
+    if (!launcherElement) {
+      return
+    }
+
+    launcherElement.innerHTML = `
+      <button class="link-page-template-row w-full text-sidebar-foreground hover:bg-sidebar-accent rounded-lg" type="button">
+        ${getGlyphSvg()}
+        <span class="link-page-template-row-label">Templates</span>
+        <span class="link-page-template-row-meta">
+          <span>Pages</span>
+          <span class="link-page-template-dot"></span>
+          <span>${getTemplates().length}</span>
+        </span>
+      </button>
+    `
+
+    const button = launcherElement.querySelector('button')
+    button.addEventListener('click', () => {
+      togglePopover(button)
+    })
   }
 
-  function findPrivateSection(scrollContainer) {
-    const privateButton = Array.from(scrollContainer.querySelectorAll('button')).find((button) =>
-      String(button.textContent || '').trim().startsWith('Private')
-    )
-    return privateButton ? privateButton.closest('.space-y-1') : null
-  }
-
-  function renderSection() {
-    if (!sectionElement) {
+  function renderPopover() {
+    if (!popoverElement) {
       return
     }
 
     const templates = getTemplates()
-    const templateCards = isSectionOpen
-      ? templates
-          .map(
-            (template) => `
-              <button class="link-page-template-card" type="button" data-template-id="${escapeHtml(template.id)}" ${
-                isCreating ? 'disabled' : ''
-              }>
-                <span class="link-page-template-icon">${escapeHtml(template.short)}</span>
-                <span class="link-page-template-body">
-                  <span class="link-page-template-name">${escapeHtml(template.title)}</span>
-                  <span class="link-page-template-desc">${escapeHtml(template.description)}</span>
-                  <span class="link-page-template-meta">
-                    ${template.tags
-                      .map((tag) => `<span class="link-page-template-pill">${escapeHtml(tag)}</span>`)
-                      .join('')}
-                  </span>
-                </span>
-              </button>
-            `
-          )
-          .join('')
-      : ''
+    const cards = templates
+      .map(
+        (template) => `
+          <button class="link-page-template-option" type="button" data-template-id="${escapeHtml(template.id)}" ${
+            isCreating ? 'disabled' : ''
+          }>
+            <span class="link-page-template-badge">${escapeHtml(template.short)}</span>
+            <span class="link-page-template-body">
+              <span class="link-page-template-name">${escapeHtml(template.title)}</span>
+              <span class="link-page-template-desc">${escapeHtml(template.description)}</span>
+              <span class="link-page-template-meta">
+                ${template.tags.map((tag) => `<span class="link-page-template-pill">${escapeHtml(tag)}</span>`).join('')}
+              </span>
+            </span>
+          </button>
+        `
+      )
+      .join('')
 
-    sectionElement.innerHTML = `
-      <button class="link-page-templates-toggle" type="button">
-        <span class="link-page-templates-label">
-          <span class="link-page-templates-eyebrow">Templates</span>
-          <span class="link-page-templates-title">Advanced page starters</span>
-        </span>
-        <span class="link-page-template-pill">${isSectionOpen ? 'Hide' : 'Show'}</span>
-      </button>
-      <div class="link-page-templates-copy">Create fully structured pages with headings, columns, checklists, notes, and planning blocks.</div>
-      ${isSectionOpen ? `<div class="link-page-templates-list">${templateCards}</div>` : ''}
+    popoverElement.innerHTML = `
+      <div class="link-page-template-headline">
+        <div class="link-page-template-eyebrow">Templates</div>
+        <div class="link-page-template-title">Create a structured page</div>
+      </div>
+      <div class="link-page-template-copy">Pick a template and the plugin will create the page, open it, and focus the first editable block.</div>
+      <div class="link-page-template-list">${cards}</div>
       <div class="link-page-template-status"></div>
     `
 
-    const toggleButton = sectionElement.querySelector('.link-page-templates-toggle')
-    statusElement = sectionElement.querySelector('.link-page-template-status')
+    popoverListElement = popoverElement.querySelector('.link-page-template-list')
+    popoverStatusElement = popoverElement.querySelector('.link-page-template-status')
 
-    toggleButton.addEventListener('click', () => {
-      isSectionOpen = !isSectionOpen
-      persistOpenPreference(isSectionOpen)
-      renderSection()
-    })
-
-    Array.from(sectionElement.querySelectorAll('[data-template-id]')).forEach((button) => {
+    Array.from(popoverElement.querySelectorAll('[data-template-id]')).forEach((button) => {
       button.addEventListener('click', () => {
         void createTemplatePage(button.getAttribute('data-template-id') || '')
       })
     })
+  }
+
+  function togglePopover(anchorElement) {
+    if (isMenuOpen && menuAnchorElement === anchorElement) {
+      closePopover()
+      return
+    }
+
+    openPopover(anchorElement)
+  }
+
+  function openPopover(anchorElement) {
+    if (!popoverElement) {
+      return
+    }
+
+    menuAnchorElement = anchorElement
+    isMenuOpen = true
+    popoverElement.dataset.open = 'true'
+    renderPopover()
+    setStatus(isCreating ? 'Creating page...' : 'Choose a template.')
+    positionPopover()
+  }
+
+  function closePopover() {
+    if (!popoverElement) {
+      return
+    }
+
+    isMenuOpen = false
+    menuAnchorElement = null
+    popoverElement.dataset.open = 'false'
+  }
+
+  function positionPopover() {
+    if (!popoverElement || !menuAnchorElement) {
+      return
+    }
+
+    const anchorRect = menuAnchorElement.getBoundingClientRect()
+    const viewportPadding = 12
+    const desiredWidth = Math.min(360, window.innerWidth - viewportPadding * 2)
+    let left = anchorRect.right + 12
+    let top = anchorRect.top - 4
+
+    popoverElement.style.width = `${desiredWidth}px`
+    popoverElement.style.left = `${left}px`
+    popoverElement.style.top = `${top}px`
+
+    const rect = popoverElement.getBoundingClientRect()
+    if (rect.right > window.innerWidth - viewportPadding) {
+      left = Math.max(viewportPadding, anchorRect.left - rect.width - 12)
+    }
+
+    if (rect.bottom > window.innerHeight - viewportPadding) {
+      top = Math.max(viewportPadding, window.innerHeight - rect.height - viewportPadding)
+    }
+
+    if (top < viewportPadding) {
+      top = viewportPadding
+    }
+
+    popoverElement.style.left = `${left}px`
+    popoverElement.style.top = `${top}px`
+  }
+
+  function findExpandedFooterSlot() {
+    const todoButton = findExpandedTodoButton()
+    return todoButton ? todoButton.closest('.px-1') : null
+  }
+
+  function findExpandedTodoButton() {
+    return Array.from(document.querySelectorAll('button')).find((button) => {
+      const text = normalizeText(button.textContent)
+      return text === 'To-do List' && button.closest('.w-64.bg-sidebar')
+    }) || null
+  }
+
+  function findCollapsedTodoButton() {
+    return Array.from(document.querySelectorAll('button')).find((button) => {
+      return button.getAttribute('title') === 'To-do List' && button.closest('.w-12.bg-sidebar')
+    }) || null
   }
 
   async function createTemplatePage(templateId) {
@@ -352,7 +605,7 @@
     }
 
     isCreating = true
-    renderSection()
+    renderPopover()
     setStatus(`Creating "${template.title}"...`)
 
     try {
@@ -366,6 +619,7 @@
       }
 
       const blocks = attachParentIds(template.blocks(today), null)
+      const focusBlockId = findFirstEditableBlockId(blocks)
 
       const pageAdded = await window.db.addPage(page)
       if (!pageAdded) {
@@ -373,11 +627,21 @@
       }
 
       await window.db.saveBlocksWithHistory(pageId, blocks, {
-        focusBlockId: blocks[0] ? blocks[0].id : null,
+        focusBlockId,
       })
 
       try {
         localStorage.setItem('lastOpenedPageId', pageId)
+        if (focusBlockId) {
+          localStorage.setItem(
+            'link-page-template-pending-focus',
+            JSON.stringify({
+              pageId,
+              blockId: focusBlockId,
+              createdAt: Date.now(),
+            })
+          )
+        }
       } catch (_error) {}
 
       setStatus(`Created "${page.title}". Refreshing workspace...`)
@@ -386,7 +650,7 @@
       }, 140)
     } catch (error) {
       isCreating = false
-      renderSection()
+      renderPopover()
       setStatus(getErrorMessage(error))
     }
   }
@@ -643,23 +907,99 @@
   }
 
   function setStatus(message) {
-    if (statusElement) {
-      statusElement.textContent = message || ''
+    if (popoverStatusElement) {
+      popoverStatusElement.textContent = message || ''
     }
   }
 
-  function readOpenPreference() {
+  function findFirstEditableBlockId(blocks) {
+    const queue = Array.isArray(blocks) ? [...blocks] : []
+    while (queue.length > 0) {
+      const block = queue.shift()
+      if (!block) {
+        continue
+      }
+
+      if (isEditableBlockType(block.type)) {
+        return block.id
+      }
+
+      if (Array.isArray(block.children) && block.children.length > 0) {
+        queue.unshift(...block.children)
+      }
+    }
+
+    return null
+  }
+
+  function isEditableBlockType(type) {
+    return !['divider', 'column_group', 'column', 'image'].includes(type)
+  }
+
+  function attemptPendingFocus() {
+    const pending = readPendingFocus()
+    if (!pending || getActivePageId() !== pending.pageId) {
+      return
+    }
+
+    const selector = `textarea[data-block-id="${escapeSelectorValue(pending.blockId)}"]`
+    const input = document.querySelector(selector)
+    if (!input) {
+      if (Date.now() - pending.createdAt > 60000) {
+        clearPendingFocus()
+      }
+      return
+    }
+
+    input.focus()
+    if (typeof input.scrollIntoView === 'function') {
+      input.scrollIntoView({ block: 'center', behavior: 'smooth' })
+    }
+
+    if (typeof input.value === 'string' && typeof input.setSelectionRange === 'function') {
+      const offset = input.value.length
+      input.setSelectionRange(offset, offset)
+    }
+
+    clearPendingFocus()
+  }
+
+  function readPendingFocus() {
     try {
-      return localStorage.getItem('link-page-templates-open') !== 'false'
+      const raw = localStorage.getItem('link-page-template-pending-focus')
+      if (!raw) {
+        return null
+      }
+
+      const parsed = JSON.parse(raw)
+      if (!parsed || typeof parsed.pageId !== 'string' || typeof parsed.blockId !== 'string') {
+        clearPendingFocus()
+        return null
+      }
+
+      return {
+        pageId: parsed.pageId,
+        blockId: parsed.blockId,
+        createdAt: Number(parsed.createdAt) || Date.now(),
+      }
     } catch (_error) {
-      return true
+      clearPendingFocus()
+      return null
     }
   }
 
-  function persistOpenPreference(value) {
+  function clearPendingFocus() {
     try {
-      localStorage.setItem('link-page-templates-open', value ? 'true' : 'false')
+      localStorage.removeItem('link-page-template-pending-focus')
     } catch (_error) {}
+  }
+
+  function getActivePageId() {
+    try {
+      return localStorage.getItem('lastOpenedPageId') || ''
+    } catch (_error) {
+      return ''
+    }
   }
 
   function getErrorMessage(error) {
@@ -677,6 +1017,29 @@
       .replace(/>/g, '&gt;')
       .replace(/"/g, '&quot;')
       .replace(/'/g, '&#39;')
+  }
+
+  function normalizeText(value) {
+    return String(value || '').replace(/\s+/g, ' ').trim()
+  }
+
+  function escapeSelectorValue(value) {
+    if (typeof CSS !== 'undefined' && typeof CSS.escape === 'function') {
+      return CSS.escape(String(value || ''))
+    }
+
+    return String(value || '').replace(/["\\]/g, '\\$&')
+  }
+
+  function getGlyphSvg() {
+    return `
+      <svg class="link-page-template-glyph" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <path d="M7.5 4.75h8.25a2.5 2.5 0 0 1 2.5 2.5v11a2.5 2.5 0 0 1-2.5 2.5H7.5a2.5 2.5 0 0 1-2.5-2.5v-11a2.5 2.5 0 0 1 2.5-2.5Z"></path>
+        <path d="M9 9h6"></path>
+        <path d="M9 12.5h6"></path>
+        <path d="M9 16h4"></path>
+      </svg>
+    `
   }
 
   if (typeof document !== 'undefined') {
