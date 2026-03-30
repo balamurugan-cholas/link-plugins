@@ -58,7 +58,7 @@
   const plugin = {
     id: 'ai-hash-tone-menu',
     name: 'AI Hash Tone Menu',
-    version: '1.1.0',
+    version: '1.2.0',
     description:
       'Shows an AI tone dropdown when users type # inside editor blocks, with grouped voice presets.',
     install: installPlugin,
@@ -78,6 +78,7 @@
   let selectedIndex = 0
   let cleanupFns = []
   let isApplyingTone = false
+  let aiStatusSnapshot = null
 
   function installPlugin() {
     if (typeof window === 'undefined' || typeof document === 'undefined') {
@@ -92,6 +93,7 @@
 
     ensureStyles()
     ensureMenu()
+    const aiStatusCleanupFns = startAiStatusSync()
 
     const onFocusIn = (event) => {
       if (isEditorTextarea(event.target)) {
@@ -189,6 +191,7 @@
       () => document.removeEventListener('selectionchange', onSelectionChange, true),
       () => window.removeEventListener('resize', onViewportChange),
       () => window.removeEventListener('scroll', onViewportChange, true),
+      ...aiStatusCleanupFns,
     ]
 
     return plugin
@@ -211,6 +214,7 @@
     flatResults = []
     selectedIndex = 0
     isApplyingTone = false
+    aiStatusSnapshot = null
 
     if (typeof window !== 'undefined') {
       window.__linkAiHashToneMenuInstalled = false
@@ -219,6 +223,170 @@
 
   function isEditorTextarea(target) {
     return !!(target && target instanceof HTMLTextAreaElement && target.matches('textarea[data-block-id]'))
+  }
+
+  function getDesktopPlatform() {
+    if (typeof window !== 'undefined' && window.electron && typeof window.electron.platform === 'string') {
+      const platform = window.electron.platform
+      if (platform === 'darwin' || platform === 'win32' || platform === 'linux') {
+        return platform
+      }
+    }
+
+    if (typeof navigator !== 'undefined' && typeof navigator.platform === 'string') {
+      const platform = navigator.platform.toLowerCase()
+      if (platform.includes('mac')) return 'darwin'
+      if (platform.includes('win')) return 'win32'
+      if (platform.includes('linux')) return 'linux'
+    }
+
+    return 'unknown'
+  }
+
+  function isMacOS() {
+    return getDesktopPlatform() === 'darwin'
+  }
+
+  function startAiStatusSync() {
+    const cleanup = []
+
+    if (!window.ai) {
+      return cleanup
+    }
+
+    if (typeof window.ai.getStatus === 'function') {
+      void window.ai
+        .getStatus()
+        .then((status) => {
+          aiStatusSnapshot = status || null
+          refreshMenuAvailabilityStatus()
+        })
+        .catch(() => {})
+    }
+
+    if (typeof window.ai.onStatusChange === 'function') {
+      const unsubscribe = window.ai.onStatusChange((status) => {
+        aiStatusSnapshot = status || null
+        refreshMenuAvailabilityStatus()
+      })
+
+      cleanup.push(() => {
+        if (typeof unsubscribe === 'function') {
+          unsubscribe()
+        }
+      })
+    }
+
+    return cleanup
+  }
+
+  function getToneRewriteSupportMessage() {
+    return isMacOS()
+      ? 'Local AI is not available in this macOS build yet.'
+      : 'Local AI is not available in this build.'
+  }
+
+  function formatAiErrorMessage(errorMessage) {
+    const message = String(errorMessage || '').trim()
+    if (!message) {
+      return 'Tone rewrite failed.'
+    }
+
+    if (
+      isMacOS() &&
+      /(node-llama-cpp|native|dlopen|cannot find module|module did not self-register|invalid elf|mach-o)/i.test(
+        message
+      )
+    ) {
+      return `${message} Rebuild or package the macOS native AI dependencies on a Mac before using this plugin.`
+    }
+
+    return message
+  }
+
+  function getToneRewriteAvailability() {
+    if (!window.ai || typeof window.ai.runInlineAgent !== 'function') {
+      return {
+        allowed: false,
+        title: 'Tone rewrite unavailable',
+        message: getToneRewriteSupportMessage(),
+        kind: 'error',
+      }
+    }
+
+    if (!aiStatusSnapshot || typeof aiStatusSnapshot.status !== 'string') {
+      return {
+        allowed: true,
+        title: 'Type after # to rewrite this block',
+        message: '',
+        kind: 'idle',
+      }
+    }
+
+    if (aiStatusSnapshot.status === 'missing') {
+      return {
+        allowed: false,
+        title: 'Tone rewrite unavailable',
+        message: 'Download the local text model in Settings to use tone rewrite.',
+        kind: 'error',
+      }
+    }
+
+    if (aiStatusSnapshot.status === 'downloading') {
+      return {
+        allowed: false,
+        title: 'Local model is downloading',
+        message: 'Wait for the local text model download to finish, then try this tone again.',
+        kind: 'loading',
+      }
+    }
+
+    if (aiStatusSnapshot.status === 'error') {
+      return {
+        allowed: false,
+        title: 'Tone rewrite unavailable',
+        message: formatAiErrorMessage(aiStatusSnapshot.error),
+        kind: 'error',
+      }
+    }
+
+    if (aiStatusSnapshot.status === 'starting') {
+      return {
+        allowed: true,
+        title: 'Local model is starting',
+        message: 'Tone rewrite may take a moment while the local model finishes starting.',
+        kind: 'loading',
+      }
+    }
+
+    if (aiStatusSnapshot.status === 'downloaded') {
+      return {
+        allowed: true,
+        title: 'Type after # to rewrite this block',
+        message: 'The first rewrite can take a moment while the local model starts.',
+        kind: 'idle',
+      }
+    }
+
+    return {
+      allowed: true,
+      title: 'Type after # to rewrite this block',
+      message: '',
+      kind: 'idle',
+    }
+  }
+
+  function refreshMenuAvailabilityStatus() {
+    if (!menuElement || menuElement.dataset.open !== 'true' || isApplyingTone) {
+      return
+    }
+
+    const availability = getToneRewriteAvailability()
+    setMenuStatus({
+      title: availability.title,
+      message: availability.message,
+      kind: availability.kind,
+    })
   }
 
   function ensureStyles() {
@@ -356,7 +524,7 @@
     menuElement.dataset.open = 'false'
     menuElement.innerHTML = `
       <div class="link-ai-tone-menu__header">
-        <div class="link-ai-tone-menu__eyebrow">AI Tone Presets</div>
+        
         <div class="link-ai-tone-menu__title">Type after # to rewrite this block</div>
         <div class="link-ai-tone-menu__status" data-kind="idle"></div>
       </div>
@@ -392,10 +560,11 @@
     flatResults = nextFlatResults
     groupedResults = groupFilteredTones(nextFlatResults)
     selectedIndex = Math.min(selectedIndex, flatResults.length - 1)
+    const availability = getToneRewriteAvailability()
     setMenuStatus({
-      title: 'Type after # to rewrite this block',
-      message: '',
-      kind: 'idle',
+      title: availability.title,
+      message: availability.message,
+      kind: availability.kind,
     })
     renderMenu()
     positionMenu()
@@ -515,7 +684,7 @@
     scrollSelectedItemIntoView()
   }
 
-  function applyTone(tone) {
+  async function applyTone(tone) {
     if (!activeTextarea || !activeMatch || !tone) {
       closeMenu()
       return
@@ -528,6 +697,30 @@
         title: 'Type after # to rewrite this block',
         message: 'Add some text to this block before choosing a tone.',
         kind: 'error',
+      })
+      return
+    }
+
+    if (window.ai && typeof window.ai.getStatus === 'function') {
+      try {
+        aiStatusSnapshot = await window.ai.getStatus()
+      } catch (error) {
+        setMenuStatus({
+          title: 'Tone rewrite unavailable',
+          message:
+            error instanceof Error ? formatAiErrorMessage(error.message) : 'Could not read the local AI status.',
+          kind: 'error',
+        })
+        return
+      }
+    }
+
+    const availability = getToneRewriteAvailability()
+    if (!availability.allowed) {
+      setMenuStatus({
+        title: availability.title,
+        message: availability.message,
+        kind: availability.kind,
       })
       return
     }
@@ -601,7 +794,7 @@
     const textarea = options.textarea
 
     if (!window.ai || typeof window.ai.runInlineAgent !== 'function') {
-      return Promise.reject(new Error('Local AI is not available in this build.'))
+      return Promise.reject(new Error(getToneRewriteSupportMessage()))
     }
 
     const requestId = `tone-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`
@@ -638,7 +831,11 @@
 
         if (event.type === 'error') {
           finish(() =>
-            reject(new Error(event.error || 'Tone rewrite failed. Make sure the local model is ready.'))
+            reject(
+              new Error(
+                formatAiErrorMessage(event.error || 'Tone rewrite failed. Make sure the local text model is ready.')
+              )
+            )
           )
           return
         }
