@@ -13,6 +13,6 @@
     "author": "Balamurugan",
     "description": "System-level utility to purge deleted files with a confirmation safety net.",
     "version": "1.0.0",
-    "downloadUrl": "https://raw.githubusercontent.com/balamurugan-cholas/link-plugins/main/plugins/trash-system.js"
+    "downloadUrl": "https://raw.githubusercontent.com/balamurugan-cholas/link-plugins/refs/heads/main/plugins/clear-all-trash.js"
   }
 ]
